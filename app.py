@@ -1,5 +1,26 @@
+import sqlalchemy
+from sqlalchemy.ext.automap import automap_base
+from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, func
 from flask import Flask, jsonify
+import datetime as dt
 
+engine = create_engine("sqlite:///Resources/hawaii.sqlite")
+# reflect an existing database into a new model
+Base = automap_base()
+
+# reflect the tables
+Base.prepare(engine, reflect=True)
+measurement = Base.classes.measurement
+station = Base.classes.station
+# Create our session (link) from Python to the DB
+session = Session(engine)
+
+# session.query(station.station).all()
+# station_activ = session.query(measurement.station, func.count(measurement.station))\
+#     .group_by(measurement.station)\
+#     .order_by(func.count(measurement.station).desc()).all()
+# station_activ
 #################################################
 # Flask Setup
 #################################################
@@ -8,84 +29,44 @@ app = Flask(__name__)
 #################################################
 # Flask Routes
 #################################################
-@app.route("/api/v1.0/justice-league")
-def justice_league():
-    """Return the justice league data as json"""
-
-    return jsonify(justice_league_members)
-
-
 @app.route("/")
 def welcome():
     return (
-        f"Welcome to the Justice League API!<br/>"
+        f"Welcome to the Weather Climate API!<br/>"
         f"Available Routes:<br/>"
-        f"/api/v1.0/justice-league<br/>"
-        f"/api/v1.0/justice-league/superhero/batman"
+        f"/api/v1.0/precipitation"
+        f"/api/v1.0/stations"
+        f"/api/v1.0/tobs"
+        f"/api/v1.0/<start>"
+        f"/api/v1.0/<start>/<end>"
     )
 
 
 @app.route("/api/v1.0/precipitation")
-def justice_league_by_real_name(real_name):
-    """Fetch the Justice League character whose real_name matches
-       the path variable supplied by the user, or a 404 if not."""
-
-    canonicalized = real_name.replace(" ", "").lower()
-    for character in justice_league_members:
-        search_term = character["real_name"].replace(" ", "").lower()
-
-        if search_term == canonicalized:
-            return jsonify(character)
-
-    return jsonify({"error": f"Character with real_name {real_name} not found."}), 404
-
+def weatherPrecipitation():
+    """Fetch the precipitation table data from the database"""
+    prcp = session.query(measurement.date,measurement.prcp).all()
+    test = [{row[0]:row[1]}for row in prcp]
+    return jsonify(test)
 
 @app.route("/api/v1.0/stations")
-def justice_league_by_superhero__name(superhero):
-    """Fetch the Justice League character whose superhero matches
-       the path variable supplied by the user, or a 404 if not."""
-
-    canonicalized = superhero.replace(" ", "").lower()
-    for character in justice_league_members:
-        search_term = character["superhero"].replace(" ", "").lower()
-
-        if search_term == canonicalized:
-            return jsonify(character)
-
-    return jsonify({"error": "Character not found."}), 404
+def weatherStations():
+    stats = {'stations':[stat[0] for stat in session.query(measurement.station)]}
+    return jsonify(stats)
 
 @app.route("/api/v1.0/tobs")
-def justice_league_by_superhero__name(superhero):
-    """Fetch the Justice League character whose superhero matches
-       the path variable supplied by the user, or a 404 if not."""
-
-    canonicalized = superhero.replace(" ", "").lower()
-    for character in justice_league_members:
-        search_term = character["superhero"].replace(" ", "").lower()
-
-        if search_term == canonicalized:
-            return jsonify(character)
-
-    return jsonify({"error": "Character not found."}), 404
-
-@app.route("/api/v1.0/tobs")
-def justice_league_by_superhero__name(superhero):
-    """Fetch the Justice League character whose superhero matches
-       the path variable supplied by the user, or a 404 if not."""
-
-    canonicalized = superhero.replace(" ", "").lower()
-    for character in justice_league_members:
-        search_term = character["superhero"].replace(" ", "").lower()
-
-        if search_term == canonicalized:
-            return jsonify(character)
-
-    return jsonify({"error": "Character not found."}), 404
+def weatherTobs():
+    most_recent = session.query(measurement.date).order_by(measurement.id.desc()).first()[0]
+    query_date = dt.datetime.strptime(most_recent, '%Y-%m-%d') - dt.timedelta(days=365)
+    tobs = session.query(measurement.date,measurement.tobs).filter(measurement.date >= query_date)\
+    .filter(measurement.date <= most_recent).all()
+    tobs_dict = [{row[0]:row[1]} for row in tobs]
+    return jsonify(tobs_dict)
 
 
-@app.route("/api/v1.0/<start>")
-@app.route("/api/v1.0/<start>/<end>")
-def calc_temps(start_date, end_date = 0):
+@app.route("/api/v1.0/<start_date>")
+@app.route("/api/v1.0/<start_date>/<end_date>")
+def calc_temps(start_date, end_date = '0'):
     """TMIN, TAVG, and TMAX for a list of dates.
     
     Args:
@@ -95,9 +76,14 @@ def calc_temps(start_date, end_date = 0):
     Returns:
         TMIN, TAVE, and TMAX
     """
-    
-    return session.query(func.min(measurement.tobs), func.avg(measurement.tobs), func.max(measurement.tobs)).\
-        filter(measurement.date >= start_date).filter(measurement.date <= end_date).all()
+    if end_date == '0':
+        end_date = session.query(measurement.date).order_by(measurement.id.desc()).first()[0]
+    temps = (session.query(measurement.date, func.min(measurement.tobs), func.avg(measurement.tobs), func.max(measurement.tobs)).\
+        filter(measurement.date >= start_date).filter(measurement.date <= end_date).all())
+    temps_dict =  [{row[0]:[{'TMIN':row[1]},{'TAVG':row[2]},{'TMAX':row[3]}]} for row in temps]
+    if temps_dict is None:
+        return 'Not found', 404
+    return jsonify(temps_dict)
 
 
 
